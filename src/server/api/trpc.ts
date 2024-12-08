@@ -10,6 +10,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
+import { Role } from "@prisma/client";
 
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
@@ -20,11 +21,6 @@ import { db } from "~/server/db";
  * This section defines the "contexts" that are available in the backend API.
  *
  * These allow you to access things when processing a request, like the database, the session, etc.
- *
- * This helper generates the "internals" for a tRPC context. The API handler and RSC clients each
- * wrap this and provides the required context.
- *
- * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth();
@@ -80,9 +76,6 @@ export const createTRPCRouter = t.router;
 
 /**
  * Middleware for timing procedure execution and adding an artificial delay in development.
- *
- * You can remove this if you don't like it, but it can help catch unwanted waterfalls by simulating
- * network latency that would occur in production but not in local development.
  */
 const timingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
@@ -103,20 +96,11 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 
 /**
  * Public (unauthenticated) procedure
- *
- * This is the base piece you use to build new queries and mutations on your tRPC API. It does not
- * guarantee that a user querying is authorized, but you can still access user session data if they
- * are logged in.
  */
 export const publicProcedure = t.procedure.use(timingMiddleware);
 
 /**
  * Protected (authenticated) procedure
- *
- * If you want a query or mutation to ONLY be accessible to logged in users, use this. It verifies
- * the session is valid and guarantees `ctx.session.user` is not null.
- *
- * @see https://trpc.io/docs/procedures
  */
 export const protectedProcedure = t.procedure
   .use(timingMiddleware)
@@ -131,3 +115,39 @@ export const protectedProcedure = t.procedure
       },
     });
   });
+
+/**
+ * Staff procedure - requires STAFF, MANAGER, or ADMIN role
+ */
+export const staffProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (
+    !ctx.session?.user.role ||
+    ![Role.STAFF, Role.MANAGER, Role.ADMIN].includes(ctx.session.user.role as Role)
+  ) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Requires staff privileges" });
+  }
+  return next();
+});
+
+/**
+ * Manager procedure - requires MANAGER or ADMIN role
+ */
+export const managerProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (
+    !ctx.session?.user.role ||
+    ![Role.MANAGER, Role.ADMIN].includes(ctx.session.user.role as Role)
+  ) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Requires manager privileges" });
+  }
+  return next();
+});
+
+/**
+ * Admin procedure - requires ADMIN role
+ */
+export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (!ctx.session?.user.role || ctx.session.user.role !== Role.ADMIN) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Requires admin privileges" });
+  }
+  return next();
+});
