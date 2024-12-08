@@ -14,6 +14,98 @@ datasource db {
     url      = env("DATABASE_URL")
 }
 
+enum Role {
+    CUSTOMER
+    STAFF
+    MANAGER
+    ADMIN
+}
+
+enum BookingStatus {
+    PENDING
+    APPROVED
+    CANCELED
+    CHECKED_IN
+    CHECKED_OUT
+}
+
+enum PaymentStatus {
+    INITIATED
+    COMPLETED
+    FAILED
+    REFUNDED
+}
+
+model User {
+    id             String    @id @default(cuid())
+    name           String?
+    email          String?   @unique
+    emailVerified  DateTime?
+    image          String?
+    hashedPassword String?
+    role           Role      @default(CUSTOMER)
+    staffLevel     Int?
+    createdAt      DateTime  @default(now())
+    updatedAt      DateTime  @updatedAt
+    pets           Pet[]
+    bookings       Booking[]
+    accounts       Account[]
+    sessions       Session[]
+    posts          Post[]
+}
+
+model Pet {
+    id        String    @id @default(cuid())
+    ownerId   String
+    owner     User      @relation(fields: [ownerId], references: [id])
+    name      String
+    type      String
+    breed     String
+    age       Int
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+    bookings  Booking[]
+
+    @@index([ownerId])
+}
+
+model Facility {
+    id        String   @id @default(cuid())
+    capacity  Int
+    pricing   Decimal
+    updatedAt DateTime @updatedAt
+}
+
+model Booking {
+    id        String        @id @default(cuid())
+    petId     String
+    pet       Pet           @relation(fields: [petId], references: [id])
+    userId    String
+    user      User          @relation(fields: [userId], references: [id])
+    startDate DateTime
+    endDate   DateTime
+    status    BookingStatus @default(PENDING)
+    createdAt DateTime      @default(now())
+    updatedAt DateTime      @updatedAt
+    payment   Payment?
+
+    @@index([petId])
+    @@index([userId])
+}
+
+model Payment {
+    id          String        @id @default(cuid())
+    bookingId   String       @unique
+    booking     Booking       @relation(fields: [bookingId], references: [id])
+    amount      Decimal
+    status      PaymentStatus
+    stripeId    String?      @unique
+    createdAt   DateTime      @default(now())
+    updatedAt   DateTime      @updatedAt
+
+    @@index([bookingId])
+}
+
 model Post {
     id        Int      @id @default(autoincrement())
     name      String
@@ -26,24 +118,25 @@ model Post {
     @@index([name])
 }
 
-// Necessary for Next auth
+// NextAuth Models
 model Account {
     id                       String  @id @default(cuid())
     userId                   String
     type                     String
     provider                 String
     providerAccountId        String
-    refresh_token            String? // @db.Text
-    access_token             String? // @db.Text
-    expires_at               Int?
-    token_type               String?
-    scope                    String?
-    id_token                 String? // @db.Text
-    session_state            String?
-    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    refresh_token           String?  @db.Text
+    access_token            String?  @db.Text
+    expires_at              Int?
+    token_type              String?
+    scope                   String?
+    id_token                String?  @db.Text
+    session_state           String?
+    user                    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
     refresh_token_expires_in Int?
 
     @@unique([provider, providerAccountId])
+    @@index([userId])
 }
 
 model Session {
@@ -52,17 +145,8 @@ model Session {
     userId       String
     expires      DateTime
     user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
 
-model User {
-    id            String    @id @default(cuid())
-    name          String?
-    email         String?   @unique
-    emailVerified DateTime?
-    image         String?
-    accounts      Account[]
-    sessions      Session[]
-    posts         Post[]
+    @@index([userId])
 }
 
 model VerificationToken {
